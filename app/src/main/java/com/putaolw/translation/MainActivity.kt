@@ -9,14 +9,17 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.*
+import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
     private val projection = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            startService(Intent(this, CaptureService::class.java).apply { putExtra("resultCode", result.resultCode); putExtra("data", result.data) })
-            startService(Intent(this, OverlayService::class.java))
+            val overlay = Intent(this, OverlayService::class.java)
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(overlay) else startService(overlay)
+            val capture = Intent(this, CaptureService::class.java).apply { putExtra("resultCode", result.resultCode); putExtra("data", result.data) }
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(capture) else startService(capture)
             status.text = "已授权，正在捕获手机播放声音"
         }
     }
@@ -31,8 +34,17 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
     }
     private fun requestAudioAndCapture() {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10)
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10)
+            status.text = "请在系统提示中允许麦克风，然后再次点击捕获"
+            return
+        }
         if (!Settings.canDrawOverlays(this)) { status.text = "请先允许悬浮窗"; return }
         val manager = getSystemService(MediaProjectionManager::class.java); projection.launch(manager.createScreenCaptureIntent())
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::status.isInitialized && Settings.canDrawOverlays(this)) status.text = "悬浮窗已授权，可以开始捕获"
     }
 }
